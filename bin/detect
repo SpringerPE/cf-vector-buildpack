@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# bin/detect <build-dir>
+set -e
+
+BUILD_DIR=$(cd "$1/" && pwd)
+
+# Acepts all apps!
+echo "vector"
+exit 0

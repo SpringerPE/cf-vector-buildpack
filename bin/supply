@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# https://docs.cloudfoundry.org/buildpacks/understand-buildpacks.html
+
+BUILD_DIR="${1}"
+CACHE_DIR="${2}"
+DEPS_DIR="${3}"
+DEPS_IDX="${4}"
+
+# dependencies paths
+VECTOR_DIR="${DEPS_DIR}/${DEPS_IDX}/vector"
+BUILDPACK_DIR=$(dirname $(readlink -f ${BASH_SOURCE%/*}))
+source ${BUILDPACK_DIR}/vector-parameters.sh
+
+if [ -f "${CACHE_DIR}/vector-${VERSION_VECTOR}.tgz" ]
+then
+    echo "-----> Using vector ${VERSION_VECTOR} from cache"
+else
+    echo "-----> Downloading vector version ${VERSION_VECTOR}: ${DOWNLOAD_URL_VECTOR}"
+    if ! wget -nv "${DOWNLOAD_URL_VECTOR}" -O "${CACHE_DIR}/vector-${VERSION_VECTOR}.tgz" 2>&1 | sed 's/^/       /'
+    then
+        echo "ERROR> vector version ${VERSION_VECTOR} not found, URL=${DOWNLOAD_URL_VECTOR}"
+        exit 1
+    fi
+fi
+
+echo "-----> Installing vector"
+mkdir -p "${VECTOR_DIR}/bin"
+pushd "${VECTOR_DIR}/bin" > /dev/null
+    tar zxf "${CACHE_DIR}/vector-${VERSION_VECTOR}.tgz" -C "${VECTOR_DIR}" --strip-components 2
+    chmod +x ${VECTOR_DIR}/bin/vector
+    # Delete not needed files
+    rm -rf ${VECTOR_DIR}/etc ${VECTOR_DIR}/config/kubernetes
+popd > /dev/null
+
+echo "-----> Enabling vector"
+cp "${BUILDPACK_DIR}/vector.sh" "${BUILD_DIR}/.vector.sh"
+chmod +x "${BUILD_DIR}/.vector.sh"
+mkdir -p "$BUILD_DIR/.profile.d"
+
+# Set variables and execute the vector redirection before app starts
+cat <<EOF > "$BUILD_DIR/.profile.d/0000_vector_logging.sh"
+export VECTOR_ROOT="/home/vcap/deps/${DEPS_IDX}/vector"
+export PATH="\$PATH:\$VECTOR_ROOT/bin"
+# run transparent stdout/stderr redirector
+. /home/vcap/app/.vector.sh
+EOF
+
